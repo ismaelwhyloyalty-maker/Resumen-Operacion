@@ -3,6 +3,8 @@ import email
 import csv
 import os
 import re
+import sys
+import traceback
 from datetime import datetime
 from email.header import decode_header
 
@@ -88,72 +90,87 @@ def get_email_body(msg):
 def fetch_emails():
     """Conecta a Outlook y obtiene los correos nuevos"""
     try:
+        print(f"[INFO] Intentando conectar a {IMAP_SERVER}:{IMAP_PORT}")
+        print(f"[INFO] Usuario: {EMAIL_USER}")
+        
         # Conectar a IMAP
         mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
+        print("[SUCCESS] Conexión IMAP exitosa")
+        
         mail.login(EMAIL_USER, EMAIL_PASSWORD)
+        print("[SUCCESS] Login exitoso")
+        
         mail.select('INBOX')
+        print("[INFO] Carpeta INBOX seleccionada")
         
         # Obtener todos los correos
         status, messages = mail.search(None, 'ALL')
         email_ids = messages[0].split()
         
+        print(f"[INFO] Total de correos encontrados: {len(email_ids)}")
+        
         emails_data = []
         
         # Procesar últimos 50 correos
-        for email_id in email_ids[-50:]:
-            status, msg_data = mail.fetch(email_id, '(RFC822)')
-            
-            for response_part in msg_data:
-                if isinstance(response_part, tuple):
-                    msg = email.message_from_bytes(response_part[1])
-                    
-                    # Extraer información
-                    sender = msg.get('From', '')
-                    subject = decode_email_subject(msg.get('Subject', ''))
-                    date_str = msg.get('Date', '')
-                    body = get_email_body(msg)
-                    
-                    # Procesar fecha
-                    try:
-                        from email.utils import parsedate_to_datetime
-                        date_obj = parsedate_to_datetime(date_str)
-                        fecha_recepcion = date_obj.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
-                        fecha_recepcion = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    
-                    # Detectar tipo de operación
-                    tipo_operacion = detect_operation_type(sender, subject)
-                    
-                    # Extraer Caja/Trailer
-                    caja_trailer = extract_caja_trailer(body)
-                    
-                    # Limitar observaciones a primeras 500 caracteres
-                    observaciones = body[:500] if body else ""
-                    
-                    emails_data.append({
-                        'Fecha Recepcion': fecha_recepcion,
-                        'Tipo Operacion': tipo_operacion,
-                        'Asunto': subject,
-                        'Caja/Trailer': caja_trailer,
-                        'Observaciones': observaciones,
-                        'Remitente': sender
-                    })
+        for i, email_id in enumerate(email_ids[-50:]):
+            try:
+                status, msg_data = mail.fetch(email_id, '(RFC822)')
+                
+                for response_part in msg_data:
+                    if isinstance(response_part, tuple):
+                        msg = email.message_from_bytes(response_part[1])
+                        
+                        # Extraer información
+                        sender = msg.get('From', '')
+                        subject = decode_email_subject(msg.get('Subject', ''))
+                        date_str = msg.get('Date', '')
+                        body = get_email_body(msg)
+                        
+                        # Procesar fecha
+                        try:
+                            from email.utils import parsedate_to_datetime
+                            date_obj = parsedate_to_datetime(date_str)
+                            fecha_recepcion = date_obj.strftime('%Y-%m-%d %H:%M:%S')
+                        except:
+                            fecha_recepcion = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Detectar tipo de operación
+                        tipo_operacion = detect_operation_type(sender, subject)
+                        
+                        # Extraer Caja/Trailer
+                        caja_trailer = extract_caja_trailer(body)
+                        
+                        # Limitar observaciones a primeras 500 caracteres
+                        observaciones = body[:500] if body else ""
+                        
+                        emails_data.append({
+                            'Fecha Recepcion': fecha_recepcion,
+                            'Tipo Operacion': tipo_operacion,
+                            'Asunto': subject,
+                            'Caja/Trailer': caja_trailer,
+                            'Observaciones': observaciones,
+                            'Remitente': sender
+                        })
+                        
+                        print(f"[✓] Correo {i+1} procesado: {tipo_operacion}")
+            except Exception as e:
+                print(f"[ERROR] Procesando correo {i+1}: {e}")
+                traceback.print_exc()
         
         mail.close()
         mail.logout()
         
+        print(f"[SUCCESS] {len(emails_data)} correos procesados correctamente")
         return emails_data
     
     except Exception as e:
-        print(f"Error al conectar a Outlook: {e}")
-        return []
+        print(f"[CRITICAL ERROR] Error al conectar a Outlook: {e}")
+        traceback.print_exc()
+        sys.exit(1)
 
 def save_to_csv(emails_data):
     """Guarda los correos en un CSV"""
     try:
-        # Verificar si el archivo ya existe
-        file_exists = os.path.isfile(CSV_FILE)
-        
         with open(CSV_FILE, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['Fecha Recepcion', 'Tipo Operacion', 'Asunto', 'Caja/Trailer', 'Observaciones', 'Remitente']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -163,18 +180,27 @@ def save_to_csv(emails_data):
             for email_data in emails_data:
                 writer.writerow(email_data)
         
-        print(f"CSV guardado: {CSV_FILE}")
-        print(f"Total de correos procesados: {len(emails_data)}")
+        print(f"[SUCCESS] CSV guardado: {CSV_FILE}")
+        print(f"[INFO] Total de correos en reporte: {len(emails_data)}")
     
     except Exception as e:
-        print(f"Error al guardar CSV: {e}")
+        print(f"[ERROR] Error al guardar CSV: {e}")
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == '__main__':
-    print("Iniciando monitoreo de Outlook...")
+    print("=" * 60)
+    print("INICIANDO MONITOREO DE OUTLOOK")
+    print("=" * 60)
+    
     emails = fetch_emails()
     
     if emails:
         save_to_csv(emails)
-        print("✓ Reporte actualizado exitosamente")
+        print("=" * 60)
+        print("✓ REPORTE ACTUALIZADO EXITOSAMENTE")
+        print("=" * 60)
     else:
-        print("No se encontraron correos o hubo un error")
+        print("=" * 60)
+        print("[WARNING] No se encontraron correos")
+        print("=" * 60)
