@@ -24,7 +24,12 @@ jobs:
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-        run: python email_monitor.py
+        run: |
+          python email_monitor.py || true
+          echo "=== LISTADO DE ARCHIVOS ==="
+          ls -la
+          echo "=== CONTENIDO CSV ==="
+          cat reporte_operaciones.csv || echo "CSV no existe"
       
       - name: Configurar Git
         run: |
@@ -35,8 +40,8 @@ jobs:
         run: |
           if [ -f reporte_operaciones.csv ]; then
             git add reporte_operaciones.csv
-            git commit -m "Actualizar reporte de operaciones - $(date +'%Y-%m-%d %H:%M:%S')" || echo "No hay cambios para hacer commit"
+            git commit -m "Actualizar reporte de operaciones - $(date +'%Y-%m-%d %H:%M:%S')" || echo "No hay cambios"
             git push
           else
-            echo "Archivo CSV no generado"
+            echo "Archivo CSV no existe"
           fi
